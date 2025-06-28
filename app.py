@@ -8,7 +8,7 @@ import os
 
 st.set_page_config(layout="wide", page_title="Portfolio Dashboard")
 
-st.title("📈 Portfolio Visualization Dashboard")
+st.title("📈 Portfolio Dashboard")
 
 # --- Load Data ---
 portfolio_holdings_data, portfolio_metrics_data = fetch_portfolio_data()
@@ -21,10 +21,36 @@ if portfolio_holdings_data is None or portfolio_metrics_data is None:
 
 holdings_df = pd.DataFrame(portfolio_holdings_data)
 
+# Formatting and Styling
+def color_change(val):
+    """
+    Colors values based on intensity - green for positive, red for negative values.
+    """
+    if pd.isna(val) or val == 0:
+        return ''
+    
+    if val > 0:
+        # Gradient of green based on value intensity
+        if val > 0.1:  # Strong positive
+            color = '#006400'  # Dark green
+        elif val > 0.05:  # Medium positive
+            color = '#008000'  # Green
+        else:  # Slight positive
+            color = '#90EE90'  # Light green
+    else:
+        # Gradient of red based on value intensity
+        if val < -0.1:  # Strong negative
+            color = '#8B0000'  # Dark red
+        elif val < -0.05:  # Medium negative
+            color = '#FF0000'  # Red
+        else:  # Slight negative
+            color = '#FFA07A'  # Light red
+    return f'color: {color}'
+
 # --- Sidebar for Data Source Info (Optional) ---
 st.sidebar.header("Data Sources")
 st.sidebar.markdown(f"**Holdings ngrok endpoint:** `{API_URL}/accounts/holdings` & `{API_URL}/market/data`")
-st.sidebar.markdown(f"**Performance History Range:** `{min_performance_date}-{max_performance_date}`")
+st.sidebar.markdown(f"**Performance History Range:** `F:{min_performance_date}T:{max_performance_date}`")
 st.sidebar.markdown("---")
 st.sidebar.header("Current Portfolio Metrics")
 if portfolio_metrics_data:
@@ -38,7 +64,7 @@ if portfolio_metrics_data:
             else:
                 st.sidebar.metric(label=key.replace('_', ' ').title(), value=f"{value:,.2f}")
         else:
-            st.sidebar.text(f"{key.replace('_', ' ').title()}: {value}")
+            st.sidebar.text(f"{key.replace('_', ' ').title()}: {', '.join(value)}")
 
 # --- Main Page Layout ---
 
@@ -67,7 +93,7 @@ if not holdings_df.empty:
     fig_allocation = px.pie(holdings_df, 
                               values='current_market_value_CAD', 
                               names='symbol', 
-                              title='Portfolio Allocation by Symbol (CAD)',
+                            #   title='Portfolio Allocation by Symbol (CAD)',
                               hover_data=['percentage', 'currency', 'current_price'],
                               labels={'current_market_value_CAD':'Market Value (CAD)', 'symbol':'Symbol'})
     fig_allocation.update_traces(textposition='inside', textinfo='percent+label')
@@ -85,27 +111,25 @@ if not holdings_df.empty:
         'Market Value 1 Day (%)', 'Market Value 1 WK (%)', 'Market Value 1 Month (%)',
         'Market Value 6 Months (%)', 'Market Value 1 Year (%)'
     ]].copy()
-    display_df.rename(columns={
+    # Convert quantity column to integer type
+    display_df['quantity'] = display_df['quantity'].astype(int)
+    col_map = {
         'symbol': 'Symbol',
         'currency': 'Currency',
         'quantity': 'Quantity',
         'current_price': 'Current Price',
         'current_market_value': 'Market Value',
-        'percentage': 'Portfolio %'
-    }, inplace=True)
+        'percentage': 'Portfolio %',
+        'Market Value 1 Day (%)': '1 Day (%)', 
+        'Market Value 1 WK (%)': '1 WK (%)',
+        'Market Value 1 Month (%)': '1 Month (%)',
+        'Market Value 6 Months (%)': '6 Months (%)', 
+        'Market Value 1 Year (%)': '1 Year (%)'
+    }
+    display_df.rename(columns=col_map, inplace=True)
+    display_df = display_df[list(col_map.values())]
 
-    # Formatting and Styling
-    def color_change(val):
-        """
-        Colors positive values green and negative values red.
-        """
-        if pd.isna(val) or val == 0:
-            return ''
-        color = 'green' if val > 0 else 'red'
-        return f'color: {color}'
-
-
-    market_value_cols = [col for col in display_df.columns if col.startswith('Market Value ')]
+    market_value_cols = [col for col in display_df.columns if col.endswith('(%)')]
 
     formatters = {
         'Current Price': '{:,.2f}',
@@ -118,7 +142,6 @@ if not holdings_df.empty:
     styled_df = display_df.style.applymap(
         color_change, subset=market_value_cols
     ).format(formatters, na_rep='N/A')
-
     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 else:
     st.warning("No holdings data to display.")
@@ -141,8 +164,197 @@ if not holdings_df.empty:
 else:
     st.warning("No holdings data to display.")
 
-# Section 3: Performance Comparison (VOO & QQQ)
-st.header("Market Benchmark Comparison (Past Year)")
+
+# Section 3: Exchange Rate Tracking
+st.header("Exchange Rate")
+st.markdown("Track historical exchange rates between major currencies and Bitcoin.")
+
+@st.cache_data(ttl=86400)  # Cache for 1 day
+def load_exchange_rate_data(ticker, period="1y"):
+    """
+    Load exchange rate data from Yahoo Finance API and process it for visualization.
+    
+    Args:
+        ticker (str): Yahoo Finance ticker symbol for the exchange rate pair
+        period (str): Time period for data retrieval (default: 1 year)
+        
+    Returns:
+        pandas.DataFrame: Processed exchange rate data with simple column structure
+    """
+    import yfinance as yf
+    try:
+        # Download data from Yahoo Finance
+        data = yf.download(ticker, period=period, progress=False)
+        
+        # If data is empty, return empty DataFrame
+        if data.empty:
+            return pd.DataFrame()
+            
+        # Create a clean DataFrame with the columns we need
+        processed_df = pd.DataFrame()
+        processed_df['Date'] = data.index
+        
+        # Extract 'Close' price - handle both MultiIndex and regular columns
+        if isinstance(data.columns, pd.MultiIndex):
+            # For MultiIndex, get the first level 'Close' column
+            # This works regardless of the second level
+            close_cols = [col for col in data.columns if col[0] == 'Close']
+            if close_cols:
+                processed_df['Close'] = data[close_cols[0]].values
+            else:
+                return pd.DataFrame()  # No Close column found
+        else:
+            # For regular columns, just get 'Close'
+            if 'Close' in data.columns:
+                processed_df['Close'] = data['Close'].values
+            else:
+                return pd.DataFrame()  # No Close column found
+        
+        # Add other columns if needed for display
+        for col_name in ['Open', 'High', 'Low']:
+            if isinstance(data.columns, pd.MultiIndex):
+                cols = [col for col in data.columns if col[0] == col_name]
+                if cols:
+                    processed_df[col_name] = data[cols[0]].values
+            elif col_name in data.columns:
+                processed_df[col_name] = data[col_name].values
+        
+        # Calculate daily change
+        processed_df['Daily Change %'] = processed_df['Close'].pct_change() * 100
+        
+        return processed_df
+    except Exception as e:
+        st.error(f"Error loading exchange rate data: {e}")
+        return pd.DataFrame()
+
+# Define currency pairs and their tickers
+currency_pairs = {
+    "USD/CAD": "CAD=X",  # Canadian Dollar to US Dollar
+    "CAD/CNY": "CADCNY=X",  # Canadian Dollar to Chinese Yuan
+    "USD/CNY": "CNY=X",  # US Dollar to Chinese Yuan
+    "BTC/USD": "BTC-USD",  # US Dollar to Bitcoin
+}
+
+# Create tabs for different currency pairs
+selected_pair = st.radio(
+    "Select Currency Pair:",
+    list(currency_pairs.keys()),
+    horizontal=True
+)
+
+# # Add a debug section
+# with st.expander("Debug Info", expanded=False):
+#     st.write("This section shows debugging information for the exchange rate data.")
+#     debug_info = st.empty()
+
+try:
+    # Load data for selected pair
+    ticker = currency_pairs[selected_pair]
+    exchange_data = load_exchange_rate_data(ticker)
+
+    # # Debug information
+    # with debug_info.container():
+    #     st.write("Exchange Rate Data Info:")
+    #     st.write(f"Data shape: {exchange_data.shape if not exchange_data.empty else 'Empty DataFrame'}")
+    #     if not exchange_data.empty:
+    #         st.write(f"Columns: {exchange_data.columns.tolist()}")
+    #         st.write(f"Data types: {exchange_data.dtypes}")
+    #         st.write("Sample data:")
+    #         st.write(exchange_data.head(2))
+    
+    if not exchange_data.empty and 'Close' in exchange_data.columns:
+        # Process the data
+        try:
+            # Make a copy to avoid chained indexing warnings
+            processed_data = exchange_data.copy()
+            
+            # Calculate daily percentage change safely
+            processed_data['Daily Change %'] = processed_data['Close'].pct_change() * 100
+            
+            # Get scalar values for calculations
+            start_price = processed_data['Close'].iloc[0]
+            current_price = processed_data['Close'].iloc[-1]
+            
+            # Ensure these are scalar values
+            start_price = float(start_price)
+            current_price = float(current_price)
+            
+            # Calculate change values
+            ytd_change = ((current_price - start_price) / start_price) * 100
+            
+            # Get daily change safely
+            try:
+                # Get the last row's daily change as a scalar value
+                daily_change_value = processed_data['Daily Change %'].iloc[-1]
+                daily_change = float(daily_change_value) if not pd.isna(daily_change_value) else 0.0
+            except:
+                daily_change = 0.0
+            
+            # Display metrics
+            col1, col2, col3 = st.columns(3)
+            
+            # Format display values
+            if selected_pair == "USD/BTC":
+                price_display = f"{current_price:,.2f}"
+            else:
+                price_display = f"{current_price:.4f}"
+            
+            col1.metric(
+                "Current Rate", 
+                price_display,
+                f"{daily_change:.2f}%"
+            )
+            col2.metric("Year-to-Date Change", f"{ytd_change:.2f}%")
+            
+            # Create exchange rate chart
+            fig = px.line(
+                processed_data, 
+                x='Date', 
+                y='Close',
+                title=f'{selected_pair} Exchange Rate (Past Year)',
+                labels={'Close': 'Exchange Rate', 'Date': 'Date'}
+            )
+            
+            # Add range slider
+            fig.update_layout(
+                xaxis=dict(
+                    rangeselector=dict(
+                        buttons=list([
+                            dict(count=1, label="1m", step="month", stepmode="backward"),
+                            dict(count=3, label="3m", step="month", stepmode="backward"),
+                            dict(count=6, label="6m", step="month", stepmode="backward"),
+                            dict(step="all")
+                        ])
+                    ),
+                    rangeslider=dict(visible=True),
+                    type="date"
+                )
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # # Show recent exchange rate data table
+            # st.subheader("Recent Exchange Rate Data")
+            # display_cols = ['Date', 'Open', 'High', 'Low', 'Close']
+            # st.dataframe(
+            #     processed_data[display_cols].tail(10).sort_values('Date', ascending=False),
+            #     use_container_width=True,
+            #     hide_index=True
+            # )
+        except Exception as e:
+            st.error(f"Error processing exchange rate data: {str(e)}")
+            st.info("The data may be incomplete or in an unexpected format.")
+    elif not exchange_data.empty:
+        st.error(f"Data is missing required 'Close' column. Found columns: {exchange_data.columns.tolist()}")
+    else:
+        st.warning(f"No exchange rate data available for {selected_pair}.")
+except Exception as e:
+    st.error(f"Error loading exchange rate data: {str(e)}")
+    st.info("Please try a different currency pair or check your internet connection.")
+
+
+# Section 4: Performance Comparison (VOO & QQQ)
+st.header("Market Benchmark Comparison")
 st.markdown("This section shows the performance of Portfolio vs QQQ/VOO over the past year.")
 
 @st.cache_data(ttl=86400) # Cache for a day
@@ -272,6 +484,19 @@ else:
 # - Currency exposure
 # - Performance attribution (if historical returns per stock and benchmark are available)
 
-st.info("This is a foundational version of the portfolio dashboard. More features and visualizations can be added as more detailed historical data becomes available.")
+
+# Add beautiful links section at the end of the dashboard
+st.markdown("---")
+st.header("📚 Resources")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.markdown("[![Stock Note](https://img.shields.io/badge/Stock_Note-000000?style=for-the-badge&logo=notion&logoColor=white)](https://www.notion.so/Stock-Note-03acb655380c44f98dbce4117d698539)")
+    st.caption("Stock Note")
+with col2:
+    st.markdown("[![Macrotrends](https://img.shields.io/badge/Macrotrends-4285F4?style=for-the-badge&logo=google-analytics&logoColor=white)](https://www.macrotrends.net/stocks/research)")
+    st.caption("Basic Analysis")
+with col3:
+    st.markdown("[![Yahoo Finance](https://img.shields.io/badge/Yahoo_Finance-6001D2?style=for-the-badge&logo=yahoo&logoColor=white)](https://finance.yahoo.com/quote/IFC.TO/)")
+    st.caption("Advanced charting and analysis")
 
 # To run this app: streamlit run app.py
