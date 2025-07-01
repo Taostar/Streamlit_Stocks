@@ -217,7 +217,8 @@ def calculate_market_value_changes(holdings_df, performance_df):
         week_target = latest_date - pd.Timedelta(days=7)      # 1 week ago
         month_target = latest_date - pd.Timedelta(days=30)    # 1 month ago
         six_month_target = latest_date - pd.Timedelta(days=180)  # 6 months ago
-        year_target = latest_date - pd.Timedelta(days=365)    # 1 year ago
+        # Only substruct 360 days to prevent None return in previous Year
+        year_target = latest_date - pd.Timedelta(days=360)    # 1 year ago
         
         # Dictionary to store previous transaction day's total market value (CAD)
         prev_day_market_value_cad = 0.0
