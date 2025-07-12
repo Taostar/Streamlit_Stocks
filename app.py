@@ -165,7 +165,77 @@ else:
     st.warning("No holdings data to display.")
 
 
-# Section 3: Exchange Rate Tracking
+
+# Section 3: Correlation Matrix Visualization
+st.header("Portfolio Correlation Matrix")
+st.markdown("Visualize the correlation between assets in your portfolio.")
+
+if correlation_matrix is not None and not correlation_matrix.empty:
+    # Use a more efficient rendering approach with Seaborn + Matplotlib
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from matplotlib.colors import LinearSegmentedColormap
+    import numpy as np
+    
+    # Generate a correlation matrix visualization
+    @st.cache_data(ttl=3600)  # Cache the figure for 1 hour to improve performance
+    def generate_corr_heatmap(corr_matrix):
+        # Create a custom color map that mimics the RdBu_r but is more efficient
+        colors = ["#053061", "#2166ac", "#92c5de", "#f7f7f7", "#f4a582", "#d6604d", "#b2182b"]
+        cmap = LinearSegmentedColormap.from_list('custom_diverging', colors, N=100)
+        
+        # Set the figure size based on the number of assets
+        n_assets = len(corr_matrix)
+        figsize = (min(12, max(8, n_assets * 0.7)), min(10, max(6, n_assets * 0.7)))
+        
+        # Create the figure
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Generate the heatmap - much more efficient without annotations on every cell
+        mask = np.triu(np.ones_like(corr_matrix, dtype=bool), k=1)  # Create mask for upper triangle
+        heatmap = sns.heatmap(
+            corr_matrix, 
+            annot=True,  # Show correlation values
+            fmt=".2f",   # Format to 2 decimal places
+            cmap=cmap,   # Custom colormap
+            vmin=-1, vmax=1,  # Fix bounds between -1 and 1
+            center=0,    # Center the colormap at 0
+            square=True, # Make cells square
+            linewidths=.5,  # Add thin lines between cells
+            annot_kws={"size": 8 if n_assets > 10 else 9},  # Adjust text size based on matrix size
+            mask=mask,   # Only show lower triangle (reduces visual redundancy)
+            cbar_kws={"shrink": 0.8, "label": "Correlation"}  # Colorbar settings
+        )
+        
+        # Rotate x-axis labels for better readability
+        plt.xticks(rotation=45, ha='right')
+        plt.title("Asset Correlation Heatmap", fontsize=14, pad=20)
+        
+        # Tighten the layout to ensure everything fits
+        plt.tight_layout()
+        
+        return fig
+    
+    # Generate and display the heatmap
+    corr_fig = generate_corr_heatmap(correlation_matrix)
+    st.pyplot(corr_fig)
+    
+    # Explanation of the correlation matrix
+    with st.expander("What does this correlation matrix show?"):
+        st.markdown("""
+        This correlation matrix shows how the returns of different assets in your portfolio move in relation to each other:
+        
+        - **+1.00**: Perfect positive correlation - assets move exactly the same way
+        - **0.00**: No correlation - assets move independently of each other
+        - **-1.00**: Perfect negative correlation - assets move exactly opposite to each other
+        
+        A well-diversified portfolio typically includes assets with low or negative correlations to each other, 
+        which can help reduce overall portfolio risk.
+        """)
+else:
+    st.warning("Correlation data is not available. Please ensure your portfolio contains multiple assets with historical price data.")
+
+# Section 4: Exchange Rate Tracking
 st.header("Exchange Rate")
 st.markdown("Track historical exchange rates between major currencies and Bitcoin.")
 
