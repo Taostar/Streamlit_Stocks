@@ -41,7 +41,7 @@ export const portfolioApi = {
   },
 
   getExchangeRate: async (pair: string): Promise<ExchangeRateData> => {
-    const response = await apiClient.get<ExchangeRateData>(`/exchange-rates/${encodeURIComponent(pair)}`);
+    const response = await apiClient.get<ExchangeRateData>(`/exchange-rates/${pair}`);
     return response.data;
   },
 

@@ -4,7 +4,7 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     # External API configuration
-    EXTERNAL_API_URL: str = "https://99c0edf47989.ngrok-free.app"
+    EXTERNAL_API_URL: str = "https://a943-99-247-104-60.ngrok-free.app"
 
     # Cache TTL values (in seconds)
     CACHE_TTL_HOLDINGS: int = 300  # 5 minutes
@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     CACHE_TTL_BENCHMARK: int = 86400  # 1 day
 
     # CORS configuration
-    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:5174"]
 
     # API configuration
     API_V1_PREFIX: str = "/api/v1"

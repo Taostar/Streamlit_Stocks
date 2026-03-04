@@ -11,7 +11,7 @@ async def get_available_currency_pairs():
     return get_available_pairs()
 
 
-@router.get("/{pair}", response_model=ExchangeRateData)
+@router.get("/{pair:path}", response_model=ExchangeRateData)
 async def get_exchange_rate(pair: str):
     """
     Get exchange rate data for a currency pair.
